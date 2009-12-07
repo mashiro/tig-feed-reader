@@ -429,12 +429,15 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		{
 			Func<String, String> conv = s =>
 			{
+				if (String.IsNullOrEmpty(s))
+					return String.Empty;
+
 				// 改行コードを削除
-				s = _regexLineBreak.Replace(s ?? String.Empty, String.Empty);
+				s = _regexLineBreak.Replace(s, String.Empty);
 
 				// HTMLタグを削除
 				if (config.EnableRemoveHtmlTag)
-					s = _regexHtmlTag.Replace(s ?? String.Empty, String.Empty);
+					s = _regexHtmlTag.Replace(s, String.Empty);
 
 				return s;
 			};
