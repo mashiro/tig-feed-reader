@@ -58,9 +58,6 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		[Description("HTML タグの除去を有効化または無効化します")]
 		public Boolean EnableRemoveHtmlTag { get; set; }
 
-		[Description("改行コードの除去を有効化または無効化します")]
-		public Boolean EnableRemoveLineBreak { get; set; }
-
 		[Browsable(false)]
 		public DateTime LastPublishDate { get; set; }
 
@@ -78,7 +75,6 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			SenderNick = "FeedReader";
 			Interval = 60 * 60;
 			EnableRemoveHtmlTag = false;
-			EnableRemoveLineBreak = false;
 		}
 
 		#region Crawl
@@ -372,8 +368,8 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 	public class FeedReaderAddIn : AddInBase
 	{
 		public FeedReaderConfiguration Config { get; set; }
-		private Regex _regexHtmlTag = new Regex("<[^>]*>");
 		private Regex _regexLineBreak = new Regex("\r|\n");
+		private Regex _regexHtmlTag = new Regex("<[^>]*>");
 
 		public override void Initialize()
 		{
@@ -413,30 +409,12 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 
 		internal void OnFeedItemReceived(object sender, FeedReceiveEventArgs e)
 		{
-			var item = sender as FeedReaderUrlConfiguration;
-
-			Func<String, String> conv = str =>
-			{
-				Action<Regex> remove = regex => str = regex.Replace(str ?? String.Empty, String.Empty);
-				if (item.EnableRemoveHtmlTag) remove(_regexHtmlTag);
-				if (item.EnableRemoveLineBreak) remove(_regexLineBreak);
-				return str;
-			};
-
-			StringBuilder content = new StringBuilder(item.ContentFormat);
-			content.Replace("#{feed_title}", conv(e.Document.Title));
-			content.Replace("#{feed_link}", conv(e.Document.Link.ToString()));
-			content.Replace("#{feed_description}", conv(e.Document.Description));
-			content.Replace("#{author}", conv(e.Item.Author));
-			content.Replace("#{link}", conv(e.Item.Link.ToString()));
-			content.Replace("#{title}", conv(e.Item.Title));
-			content.Replace("#{description}", conv(e.Item.Description));
-			content.Replace("#{publish_date}", conv(e.Item.PublishDate.ToString()));
+			var config = sender as FeedReaderUrlConfiguration;
 
 			PrivMsgMessage priv = new PrivMsgMessage();
-			priv.Sender = item.SenderNick;
-			priv.Receiver = item.ChannelName;
-			priv.Content = content.ToString();
+			priv.Sender = config.SenderNick;
+			priv.Receiver = config.ChannelName;
+			priv.Content = ReplaceFormatedString(config.ContentFormat, config, e.Document, e.Item);
 			CurrentSession.Send(priv);
 		}
 
@@ -445,6 +423,32 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			item.ErrorHandled += new EventHandler<ErrorEventArgs>(OnErrorHandled);
 			item.PublishDateUpdated += new EventHandler(OnPublishDateUpdated);
 			item.FeedItemReceived += new EventHandler<FeedReceiveEventArgs>(OnFeedItemReceived);			
+		}
+
+		private String ReplaceFormatedString(String str, FeedReaderUrlConfiguration config, IFeedDocument doc, IFeedItem item)
+		{
+			Func<String, String> conv = s =>
+			{
+				// 改行コードを削除
+				s = _regexLineBreak.Replace(s ?? String.Empty, String.Empty);
+
+				// HTMLタグを削除
+				if (config.EnableRemoveHtmlTag)
+					s = _regexHtmlTag.Replace(s ?? String.Empty, String.Empty);
+
+				return s;
+			};
+
+			StringBuilder sb = new StringBuilder(str);
+			sb.Replace("#{feed_title}", conv(doc.Title));
+			sb.Replace("#{feed_link}", conv(doc.Link.ToString()));
+			sb.Replace("#{feed_description}", conv(doc.Description));
+			sb.Replace("#{author}", conv(item.Author));
+			sb.Replace("#{link}", conv(item.Link.ToString()));
+			sb.Replace("#{title}", conv(item.Title));
+			sb.Replace("#{description}", conv(item.Description));
+			sb.Replace("#{publish_date}", conv(item.PublishDate.ToString()));
+			return sb.ToString();
 		}
 	}
 }
