@@ -174,11 +174,15 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 
 	public class FeedReaderConfiguration : IConfiguration, IDisposable
 	{
+		[Description("TypableMapを有効化または無効化します")]
+        public Boolean EnableTypableMap { get; set; }
+
 		[Browsable(false)]
 		public List<FeedReaderUrlConfiguration> Items { get; set; }
 
 		public FeedReaderConfiguration()
 		{
+			EnableTypableMap = false;
 			Items = new List<FeedReaderUrlConfiguration>();
 		}
 
@@ -386,8 +390,14 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 	public class FeedReaderAddIn : AddInBase
 	{
 		public FeedReaderConfiguration Config { get; set; }
+
 		private Regex _regexLineBreak = new Regex(@"\r\n|\r|\n");
 		private Regex _regexHtmlTag = new Regex(@"<[^>]*>");
+
+		public FeedReaderAddIn()
+		{
+			Config = null;
+		}
 
 		public override void Initialize()
 		{
@@ -436,6 +446,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 
 			String replacedSender = ReplaceFormatedString(config.SenderNick, config, e.Document, e.Item);
 			String replacedContent = ReplaceFormatedString(config.ContentFormat, config, e.Document, e.Item);
+			replacedContent = AppendTypableMap(replacedContent, FeedItemToStatus(e.Item));
 
 			foreach (String line in replacedContent.Split('\n'))
 			{
@@ -492,6 +503,47 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			sb.Replace("#{publish_date}", conv(item.PublishDate.ToString()));
 
 			return sb.ToString();
+		}
+
+		/// <summary>
+		/// FeedItem から Status に無理矢理変換
+		/// </summary>
+		private Status FeedItemToStatus(IFeedItem item)
+		{
+			return new Status()
+			{
+				CreatedAt = item.PublishDate,
+				Source = item.Link.ToString(),
+				Text = item.Description,
+				User = new User()
+				{
+					Name = item.Title,
+					ScreenName = item.Author,
+				},
+			};
+		}
+
+		/// <summary>
+		/// TypableMapの情報を付与
+		/// </summary>
+		private String AppendTypableMap(String str, Status status)
+		{
+			if (Config.EnableTypableMap)
+			{
+				var typableMapCommands = CurrentSession.AddInManager.GetAddIn<TypableMapSupport>().TypableMapCommands;
+				if (typableMapCommands != null)
+				{
+					String typableMapId = typableMapCommands.TypableMap.Add(status);
+
+					// TypableMapKeyColorNumber = -1 の場合には色がつかなくなる
+					if (CurrentSession.Config.TypableMapKeyColorNumber < 0)
+						return str + String.Format(" ({0})", typableMapId);
+					else
+						return str + String.Format(" \x0003{0}({1})", CurrentSession.Config.TypableMapKeyColorNumber, typableMapId);
+				}
+			}
+
+			return str;
 		}
 	}
 }
