@@ -11,10 +11,23 @@ using Misuzilla.Applications.TwitterIrcGateway;
 using Misuzilla.Applications.TwitterIrcGateway.AddIns;
 using Misuzilla.Applications.TwitterIrcGateway.AddIns.Console;
 using Misuzilla.Applications.TwitterIrcGateway.AddIns.TypableMap;
-using Spica.Xml.Feed.Simple;
+using Spica.Xml.Feed;
 
 namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 {
+	public static class FeedReaderMessages
+	{
+		public const String ContentFormat = @"
+#{feed_title} - フィードのタイトル
+#{feed_link} - フィードのリンク
+#{feed_description} - フィードの説明
+#{author} - 記事の著者
+#{link} - 記事のリンク
+#{title} - 記事のタイトル
+#{description} - 記事の説明
+#{publish_date} - 記事の公開された日時";
+	}
+
 	public class FeedReceiveEventArgs : EventArgs
 	{
 		public IFeedDocument Document { get; private set; }
@@ -34,26 +47,20 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		[Description("チェックする間隔を秒単位で指定します")]
 		public Int32 Interval { get; set; }
 
-		[Description(@"
-コンテンツの形式を指定します
-  #{feed_title} - フィードのタイトル
-  #{feed_link} - フィードのリンク
-  #{feed_description} - フィードの説明
-  #{author} - 記事の著者
-  #{link} - 記事のリンク
-  #{title} - 記事のタイトル
-  #{description} - 記事の説明
-  #{publish_date} - 記事の公開された日時")]
+		[Description("コンテンツの形式を指定します (書式指定可)")]
 		public String ContentFormat { get; set; }
 
 		[Description("コンテンツが流れるチャンネル名を指定します")]
 		public String ChannelName { get; set; }
 
-		[Description("コンテンツを送るユーザ名を指定します")]
+		[Description("コンテンツを送るユーザ名を指定します (書式指定可)")]
 		public String SenderNick { get; set; }
 
 		[Description("フィードを有効化または無効化します")]
 		public Boolean Enabled { get; set; }
+
+		[Description("改行コードの除去を有効かまたは無効化します")]
+		public Boolean EnableRemoveLineBreak { get; set; }
 
 		[Description("HTML タグの除去を有効化または無効化します")]
 		public Boolean EnableRemoveHtmlTag { get; set; }
@@ -74,6 +81,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			ChannelName = "#FeedReader";
 			SenderNick = "FeedReader";
 			Interval = 60 * 60;
+			EnableRemoveLineBreak = false;
 			EnableRemoveHtmlTag = false;
 		}
 
@@ -338,6 +346,17 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			}
 		}
 
+		[Description("書式指定子の一覧を表示します")]
+		public void ShowFormat()
+		{
+			Console.NotifyMessage(FeedReaderMessages.ContentFormat);
+		}
+
+		public void Test()
+		{
+
+		}
+
 		[Description("フィードを保存してコンテキストを終了します")]
 		public void Save()
 		{
@@ -346,16 +365,15 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			if (IsNew) AddIn.Config.Items.Add(Item);
 			AddIn.SaveConfig();
 
-#if false
-			// チャンネルに JOIN する
 			if (!CurrentSession.Groups.ContainsKey(Item.ChannelName))
 			{
-				CurrentSession.SendServer(new JoinMessage(Item.ChannelName, ""));
-				CurrentSession.SendServer(new ModeMessage(Item.ChannelName, "+s"));
-				CurrentSession.SendServer(new ModeMessage(Item.ChannelName, "+n"));
-				CurrentSession.SendServer(new ModeMessage(Item.ChannelName, "+i"));
+				// グループを作成する
+				Misuzilla.Applications.TwitterIrcGateway.Group group = new Misuzilla.Applications.TwitterIrcGateway.Group(Item.ChannelName);
+				CurrentSession.Groups.Add(Item.ChannelName, group);
+				CurrentSession.JoinChannel(CurrentSession, group);
+				Console.NotifyMessage(String.Format("グループ名 {0} を作成しました。", Item.ChannelName));
+				CurrentSession.SaveGroups();
 			}
-#endif
 
 			// クローラの状態を更新
 			Item.UpdateCrawlState();
@@ -368,8 +386,8 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 	public class FeedReaderAddIn : AddInBase
 	{
 		public FeedReaderConfiguration Config { get; set; }
-		private Regex _regexLineBreak = new Regex("\r|\n");
-		private Regex _regexHtmlTag = new Regex("<[^>]*>");
+		private Regex _regexLineBreak = new Regex(@"\r\n|\r|\n");
+		private Regex _regexHtmlTag = new Regex(@"<[^>]*>");
 
 		public override void Initialize()
 		{
@@ -386,7 +404,9 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 
 		public override void Uninitialize()
 		{
+			SaveConfig();
 			Config.Dispose();
+
 			base.Uninitialize();
 		}
 
@@ -399,11 +419,14 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		{
 			var item = sender as FeedReaderUrlConfiguration;
 			CurrentSession.SendChannelMessage(item.ChannelName, item.SenderNick, e.Exception.Message, true, false, false, true);
-			//CurrentSession.SendChannelMessage(item.ChannelName, item.SenderNick, e.Exception.StackTrace, true, false, false, true);
+#if DEBUG
+			CurrentSession.SendChannelMessage(item.ChannelName, item.SenderNick, e.Exception.StackTrace, true, false, false, true);
+#endif
 		}
 
 		internal void OnPublishDateUpdated(object sender, EventArgs e)
 		{
+			// 毎回保存するとたぶん爆発する
 			//SaveConfig();
 		}
 
@@ -411,11 +434,17 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		{
 			var config = sender as FeedReaderUrlConfiguration;
 
-			PrivMsgMessage priv = new PrivMsgMessage();
-			priv.Sender = config.SenderNick;
-			priv.Receiver = config.ChannelName;
-			priv.Content = ReplaceFormatedString(config.ContentFormat, config, e.Document, e.Item);
-			CurrentSession.Send(priv);
+			String replacedSender = ReplaceFormatedString(config.SenderNick, config, e.Document, e.Item);
+			String replacedContent = ReplaceFormatedString(config.ContentFormat, config, e.Document, e.Item);
+
+			foreach (String line in replacedContent.Split('\n'))
+			{
+				PrivMsgMessage priv = new PrivMsgMessage();
+				priv.Sender = replacedSender;
+				priv.Receiver = config.ChannelName;
+				priv.Content = line;
+				CurrentSession.Send(priv);
+			}
 		}
 
 		internal void RegisterEvent(FeedReaderUrlConfiguration item)
@@ -432,12 +461,22 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 				if (String.IsNullOrEmpty(s))
 					return String.Empty;
 
-				// 改行コードを削除
-				s = _regexLineBreak.Replace(s, String.Empty);
+				if (config.EnableRemoveLineBreak)
+				{
+					// 改行コードを削除
+					s = _regexLineBreak.Replace(s, String.Empty);
+				}
+				else
+				{
+					// 改行コードを LF(\n) に統一
+					s = _regexLineBreak.Replace(s, "\n");
+				}
 
 				// HTMLタグを削除
 				if (config.EnableRemoveHtmlTag)
+				{
 					s = _regexHtmlTag.Replace(s, String.Empty);
+				}
 
 				return s;
 			};
@@ -451,6 +490,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			sb.Replace("#{title}", conv(item.Title));
 			sb.Replace("#{description}", conv(item.Description));
 			sb.Replace("#{publish_date}", conv(item.PublishDate.ToString()));
+
 			return sb.ToString();
 		}
 	}
