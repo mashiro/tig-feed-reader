@@ -65,6 +65,9 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		[Description("HTML タグの除去を有効化または無効化します")]
 		public Boolean EnableRemoveHtmlTag { get; set; }
 
+		[Description("エラーを無視するかどうかを指定します。")]
+		public Boolean IgnoreWatchError { get; set; }
+
 		[Browsable(false)]
 		public DateTime LastPublishDate { get; set; }
 
@@ -83,6 +86,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			Interval = 60 * 60;
 			EnableRemoveLineBreak = false;
 			EnableRemoveHtmlTag = false;
+			IgnoreWatchError = true;
 		}
 
 		#region Crawl
@@ -356,9 +360,11 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			Console.NotifyMessage(FeedReaderMessages.ContentFormat);
 		}
 
-		public void Test()
+		[Description("フィードの取得を試みます")]
+		public void UpdateTest()
 		{
-
+			Item.LastPublishDate = DateTime.MinValue;
+			Item.CrawlForce();
 		}
 
 		[Description("フィードを保存してコンテキストを終了します")]
@@ -428,10 +434,13 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		internal void OnErrorHandled(object sender, ErrorEventArgs e)
 		{
 			var item = sender as FeedReaderUrlConfiguration;
-			CurrentSession.SendChannelMessage(item.ChannelName, item.SenderNick, e.Exception.Message, true, false, false, true);
+			if (!item.IgnoreWatchError)
+			{
+				CurrentSession.SendChannelMessage(item.ChannelName, item.SenderNick, e.Exception.Message, true, false, false, true);
 #if DEBUG
-			CurrentSession.SendChannelMessage(item.ChannelName, item.SenderNick, e.Exception.StackTrace, true, false, false, true);
+				CurrentSession.SendChannelMessage(item.ChannelName, item.SenderNick, e.Exception.StackTrace, true, false, false, true);
 #endif
+			}
 		}
 
 		internal void OnPublishDateUpdated(object sender, EventArgs e)
