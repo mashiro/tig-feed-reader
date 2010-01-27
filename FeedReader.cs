@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Linq;
 using System.Threading;
 using System.Diagnostics;
+using System.Net;
 using Misuzilla.Net.Irc;
 using Misuzilla.Applications.TwitterIrcGateway;
 using Misuzilla.Applications.TwitterIrcGateway.AddIns;
@@ -56,6 +57,12 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		[Description("コンテンツを送るユーザ名を指定します (書式指定可)")]
 		public String SenderNick { get; set; }
 
+		[Description("Basic 認証に使用するユーザ名を指定します")]
+		public String Username { get; set; }
+
+		[Description("Basic 認証に使用するパスワードを指定します")]
+		public String Password { get; set; }
+
 		[Description("フィードを有効化または無効化します")]
 		public Boolean Enabled { get; set; }
 
@@ -78,12 +85,14 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 
 		public FeedReaderUrlConfiguration()
 		{
-			Enabled = true;
 			Url = String.Empty;
+			Interval = 60 * 60;
 			ContentFormat = "#{title} #{link}";
 			ChannelName = "#FeedReader";
 			SenderNick = "FeedReader";
-			Interval = 60 * 60;
+			Username = String.Empty;
+			Password = String.Empty;
+			Enabled = true;
 			EnableRemoveLineBreak = false;
 			EnableRemoveHtmlTag = false;
 			IgnoreWatchError = true;
@@ -125,7 +134,11 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		{
 			try
 			{
-				IFeedDocument feed = FeedDocument.Load(Url);
+				NetworkCredential credential = null;
+				if (!String.IsNullOrEmpty(Username) && !String.IsNullOrEmpty(Password))
+					credential = new NetworkCredential(Username, Password);
+
+				IFeedDocument feed = FeedDocument.Load(Url, credential);
 
 				var updates = feed.Items.Where(item => item.PublishDate > LastPublishDate).ToList();
 				if (updates.Count > 0)
@@ -480,6 +493,9 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			{
 				if (String.IsNullOrEmpty(s))
 					return String.Empty;
+
+				// HTML デコード
+				s = Utility.UnescapeCharReference(s);
 
 				if (config.EnableRemoveLineBreak)
 				{

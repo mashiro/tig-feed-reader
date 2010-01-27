@@ -28,14 +28,14 @@ namespace Spica.Xml.Feed
 			_serializableDocuments.Add(typeof(Rss10Document));
 		}
 
-		public static IFeedDocument Load(string address)
+		public static IFeedDocument Load(string address, ICredentials credentials)
 		{
-			return Load(new Uri(address));
+			return Load(new Uri(address), credentials);
 		}
 
-		public static IFeedDocument Load(Uri address)
+		public static IFeedDocument Load(Uri address, ICredentials credentials)
 		{
-			using (WebClient webClient = FeedUtility.CreateWebClient())
+			using (WebClient webClient = CreateWebClient(credentials))
 			{
 				using (Stream stream = webClient.OpenRead(address))
 				{
@@ -61,6 +61,19 @@ namespace Spica.Xml.Feed
 			}
 
 			throw new InvalidFeedException();
+		}
+
+		public static WebClient CreateWebClient(ICredentials credentials)
+		{
+			WebClient webClient = new WebClient();
+			webClient.Headers["Accept"] = "application/xml, text/xml";
+			webClient.Headers["User-Agent"] = "Mozilla/4.0 (compatible; MSIE 6.0; Windows XP)";
+			webClient.Encoding = Encoding.UTF8;
+
+			if (credentials != null)
+				webClient.Credentials = credentials;
+
+			return webClient;
 		}
 	}
 }
