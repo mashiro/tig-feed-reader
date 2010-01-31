@@ -7,26 +7,42 @@ using System.Linq;
 using System.Threading;
 using System.Diagnostics;
 using System.Net;
+using System.Security.Cryptography;
 using Misuzilla.Net.Irc;
 using Misuzilla.Applications.TwitterIrcGateway;
 using Misuzilla.Applications.TwitterIrcGateway.AddIns;
 using Misuzilla.Applications.TwitterIrcGateway.AddIns.Console;
 using Misuzilla.Applications.TwitterIrcGateway.AddIns.TypableMap;
 using Spica.Xml.Feed;
+using Spica.Applications.TwitterIrcGateway.AddIns.FeedReader.Properties;
 
 namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 {
-	public static class FeedReaderMessages
+	public static class FeedReaderUtility
 	{
-		public const String ContentFormat = @"
-#{feed_title} - フィードのタイトル
-#{feed_link} - フィードのリンク
-#{feed_description} - フィードの説明
-#{author} - 記事の著者
-#{link} - 記事のリンク
-#{title} - 記事のタイトル
-#{description} - 記事の説明
-#{publish_date} - 記事の公開された日時";
+		public static String Encrypt(String s)
+		{
+			if (!String.IsNullOrEmpty(s))
+			{
+				byte[] src = Encoding.UTF8.GetBytes(s);
+				byte[] key = Encoding.UTF8.GetBytes(Resources.SharedKey);
+				s = Convert.ToBase64String(CryptUtility.Encrypt(Aes.Create(), src, key));
+			}
+
+			return s;
+		}
+
+		public static String Decrypt(String s)
+		{
+			if (!String.IsNullOrEmpty(s))
+			{
+				byte[] src = Convert.FromBase64String(s);
+				byte[] key = Encoding.UTF8.GetBytes(Resources.SharedKey);
+				s = Encoding.UTF8.GetString(CryptUtility.Decrypt(Aes.Create(), src, key));
+			}
+
+			return s;
+		}
 	}
 
 	public class FeedReceiveEventArgs : EventArgs
@@ -51,17 +67,11 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		[Description("コンテンツの形式を指定します (書式指定可)")]
 		public String ContentFormat { get; set; }
 
-		[Description("コンテンツが流れるチャンネル名を指定します")]
-		public String ChannelName { get; set; }
-
 		[Description("コンテンツを送るユーザ名を指定します (書式指定可)")]
 		public String SenderNick { get; set; }
 
-		[Description("Basic 認証に使用するユーザ名を指定します")]
-		public String Username { get; set; }
-
-		[Description("Basic 認証に使用するパスワードを指定します")]
-		public String Password { get; set; }
+		[Description("コンテンツが流れるチャンネル名を指定します")]
+		public String ChannelName { get; set; }		
 
 		[Description("フィードを有効化または無効化します")]
 		public Boolean Enabled { get; set; }
@@ -76,6 +86,12 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		public Boolean IgnoreWatchError { get; set; }
 
 		[Browsable(false)]
+		public String Username { get; set; }
+
+		[Browsable(false)]
+		public String Password { get; set; }
+
+		[Browsable(false)]
 		public DateTime LastPublishDate { get; set; }
 
 		public event EventHandler<ErrorEventArgs> ErrorHandled;
@@ -88,14 +104,15 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			Url = String.Empty;
 			Interval = 60 * 60;
 			ContentFormat = "#{title} #{link}";
-			ChannelName = "#FeedReader";
 			SenderNick = "FeedReader";
-			Username = String.Empty;
-			Password = String.Empty;
+			ChannelName = "#FeedReader";			
 			Enabled = true;
 			EnableRemoveLineBreak = false;
 			EnableRemoveHtmlTag = false;
 			IgnoreWatchError = true;
+			Username = String.Empty;
+			Password = String.Empty;
+			LastPublishDate = DateTime.MinValue;
 		}
 
 		#region Crawl
@@ -135,8 +152,9 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			try
 			{
 				NetworkCredential credential = null;
-				if (!String.IsNullOrEmpty(Username) && !String.IsNullOrEmpty(Password))
-					credential = new NetworkCredential(Username, Password);
+				String password = FeedReaderUtility.Decrypt(Password);				
+				if (!String.IsNullOrEmpty(Username) && !String.IsNullOrEmpty(password))
+					credential = new NetworkCredential(Username, password);
 
 				IFeedDocument feed = FeedDocument.Load(Url, credential);
 
@@ -367,17 +385,34 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			}
 		}
 
-		[Description("書式指定子の一覧を表示します")]
-		public void ShowFormat()
-		{
-			Console.NotifyMessage(FeedReaderMessages.ContentFormat);
-		}
-
 		[Description("フィードの取得を試みます")]
-		public void UpdateTest()
+		public void Test()
 		{
 			Item.LastPublishDate = DateTime.MinValue;
 			Item.CrawlForce();
+			Console.NotifyMessage("フィードの取得を試みます");
+		}
+
+		[Description("書式指定子の一覧を表示します")]
+		public void ShowFormat()
+		{
+			Console.NotifyMessage(Resources.FormatMessage);
+		}
+
+		[Description("BASIC 認証に使用するユーザ名を設定します")]
+		public void Username(String s)
+		{
+			if (!String.IsNullOrEmpty(s))
+				Item.Username = s;
+			Console.NotifyMessage(String.Format("Username = {0}", Item.Username));
+		}
+
+		[Description("BASIC 認証に使用するパスワードを設定します")]
+		public void Password(String s)
+		{
+			if (!String.IsNullOrEmpty(s))
+				Item.Password = FeedReaderUtility.Encrypt(s);
+			Console.NotifyMessage(String.Format("Password = {0}", FeedReaderUtility.Decrypt(Item.Password)));
 		}
 
 		[Description("フィードを保存してコンテキストを終了します")]
@@ -409,13 +444,14 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 	public class FeedReaderAddIn : AddInBase
 	{
 		public FeedReaderConfiguration Config { get; set; }
-
 		private Regex _regexLineBreak = new Regex(@"\r\n|\r|\n");
 		private Regex _regexHtmlTag = new Regex(@"<[^>]*>");
+		private DateTime _lastSaveTime;
 
 		public FeedReaderAddIn()
 		{
 			Config = null;
+			_lastSaveTime = DateTime.Now;
 		}
 
 		public override void Initialize()
@@ -460,6 +496,15 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		{
 			// 毎回保存するとたぶん爆発する
 			//SaveConfig();
+
+			// 前回の保存から1時間経過していたら保存する
+			DateTime now = DateTime.Now;
+			TimeSpan span = now - _lastSaveTime;
+			if (span.TotalHours >= 1)
+			{
+				SaveConfig();
+				_lastSaveTime = now;
+			}
 		}
 
 		internal void OnFeedItemReceived(object sender, FeedReceiveEventArgs e)

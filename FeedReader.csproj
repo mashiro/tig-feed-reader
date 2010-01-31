@@ -51,14 +51,26 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Atom10.cs" />
-    <Compile Include="FeedDocument.cs" />
+    <Compile Include="Xml\Atom10.cs" />
+    <Compile Include="CryptUtility.cs" />
+    <Compile Include="Xml\FeedDocument.cs" />
     <Compile Include="FeedReader.cs" />
-    <Compile Include="IFeedDocument.cs" />
+    <Compile Include="Xml\IFeedDocument.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Rss10.cs" />
-    <Compile Include="Rss20.cs" />
-    <Compile Include="FeedUtility.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="Xml\Rss10.cs" />
+    <Compile Include="Xml\Rss20.cs" />
+    <Compile Include="Xml\FeedUtility.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
