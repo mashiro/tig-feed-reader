@@ -82,7 +82,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		[Description("HTML タグの除去を有効化または無効化します")]
 		public Boolean EnableRemoveHtmlTag { get; set; }
 
-		[Description("エラーを無視するかどうかを指定します。")]
+		[Description("エラーを無視するかどうかを指定します")]
 		public Boolean IgnoreWatchError { get; set; }
 
 		[Browsable(false)]
@@ -212,12 +212,16 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		[Description("TypableMapを有効化または無効化します")]
         public Boolean EnableTypableMap { get; set; }
 
+		[Description("チャンネル作成時のモードを指定します")]
+		public String InitialModes { get; set; }
+
 		[Browsable(false)]
 		public List<FeedReaderUrlConfiguration> Items { get; set; }
 
 		public FeedReaderConfiguration()
 		{
 			EnableTypableMap = false;
+			InitialModes = "+pni";
 			Items = new List<FeedReaderUrlConfiguration>();
 		}
 
@@ -427,6 +431,8 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			{
 				// グループを作成する
 				Misuzilla.Applications.TwitterIrcGateway.Group group = new Misuzilla.Applications.TwitterIrcGateway.Group(Item.ChannelName);
+				foreach (ChannelMode mode in ChannelMode.Parse(AddIn.Config.InitialModes))
+					group.ChannelModes.Add(mode);
 				CurrentSession.Groups.Add(Item.ChannelName, group);
 				CurrentSession.JoinChannel(CurrentSession, group);
 				Console.NotifyMessage(String.Format("グループ名 {0} を作成しました。", Item.ChannelName));
