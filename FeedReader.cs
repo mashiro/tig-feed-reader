@@ -116,18 +116,18 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		}
 
 		#region Crawl
-		public void UpdateCrawlState()
+		public void Update()
 		{
 			if (Enabled && !String.IsNullOrEmpty(Url))
-				StartCrawl();
+				Start();
 			else
-				EndCrawl();
+				Stop();
 		}
 
-		public void StartCrawl()
+		public void Start()
 		{
 			if (_timer == null)
-				_timer = new Timer(OnTimerCallback, null, Timeout.Infinite, Timeout.Infinite);
+				_timer = new Timer(OnTimerCallbackInternal, null, Timeout.Infinite, Timeout.Infinite);
 
 			// HUCK: MONO のバグ対策に dueTime を適度にずらす
 			Int32 intervalMillSec = Interval * 1000;
@@ -135,7 +135,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			_timer.Change(intervalMillSec + randomDueTime, intervalMillSec);
 		}
 
-		public void EndCrawl()
+		public void Stop()
 		{
 			if (_timer != null)
 			{
@@ -144,9 +144,24 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			}
 		}
 
-		public void CrawlForce()
+		public void Force()
 		{
-			ThreadPool.QueueUserWorkItem((state) => { OnTimerCallback(state); });
+			ThreadPool.QueueUserWorkItem((state) => { OnTimerCallbackInternal(state); });
+		}
+
+		private void OnTimerCallbackInternal(Object state)
+		{
+			if (_timer != null && Monitor.TryEnter(_timer))
+			{
+				try
+				{
+					OnTimerCallback(state);
+				}
+				finally
+				{
+					Monitor.Exit(_timer);
+				}
+			}
 		}
 
 		private void OnTimerCallback(Object state)
@@ -186,7 +201,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 
 		public void Dispose()
 		{
-			EndCrawl();
+			Stop();
 		}
 
 		public override string ToString()
@@ -243,7 +258,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			foreach (var item in Items)
 			{
 				addIn.RegisterEvents(item);
-				item.UpdateCrawlState();
+				item.Update();
 			}
 		}
 	}
@@ -268,7 +283,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		{
 			FindAt(arg, item =>
 			{
-				item.CrawlForce();
+				item.Force();
 				Console.NotifyMessage(String.Format("フィード {0} を更新しました。", item));
 			});
 		}
@@ -346,7 +361,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 				AddIn.SaveConfig();
 				Console.NotifyMessage(String.Format("フィード {0} を{1}化しました。", item, (enable ? "有効" : "無効")));
 
-				item.UpdateCrawlState();
+				item.Update();
 			});
 		}
 
@@ -396,7 +411,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		public void Test()
 		{
 			Item.LastPublishDate = DateTime.MinValue;
-			Item.CrawlForce();
+			Item.Force();
 			Console.NotifyMessage("フィードの取得を試みます");
 		}
 
@@ -443,7 +458,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			}
 
 			// クローラの状態を更新
-			Item.UpdateCrawlState();
+			Item.Update();
 
 			Console.NotifyMessage(String.Format("フィードを{0}しました。", (IsNew ? "新規作成" : "保存")));
 			Exit();
