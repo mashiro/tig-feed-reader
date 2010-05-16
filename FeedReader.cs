@@ -129,8 +129,10 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			if (_timer == null)
 				_timer = new Timer(OnTimerCallback, null, Timeout.Infinite, Timeout.Infinite);
 
+			// HUCK: MONO のバグ対策に dueTime を適度にずらす
 			Int32 intervalMillSec = Interval * 1000;
-			_timer.Change(intervalMillSec, intervalMillSec);
+			Int32 randomDueTime = new Random().Next(0, 3000); 
+			_timer.Change(intervalMillSec + randomDueTime, intervalMillSec);
 		}
 
 		public void EndCrawl()
@@ -152,12 +154,13 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			try
 			{
 				NetworkCredential credential = null;
-				String password = FeedReaderUtility.Decrypt(Password);				
-				if (!String.IsNullOrEmpty(Username) && !String.IsNullOrEmpty(password))
+				if (!String.IsNullOrEmpty(Username) && !String.IsNullOrEmpty(Password))
+				{
+					String password = FeedReaderUtility.Decrypt(Password);
 					credential = new NetworkCredential(Username, password);
+				}
 
 				IFeedDocument feed = FeedDocument.Load(Url, credential);
-
 				var updates = feed.Items.Where(item => item.PublishDate > LastPublishDate).ToList();
 				if (updates.Count > 0)
 				{
@@ -239,7 +242,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		{
 			foreach (var item in Items)
 			{
-				addIn.RegisterEvent(item);
+				addIn.RegisterEvents(item);
 				item.UpdateCrawlState();
 			}
 		}
@@ -328,7 +331,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			FeedReaderEditContext context = Console.GetContext<FeedReaderEditContext>(CurrentServer, CurrentSession) as FeedReaderEditContext;
 
 			var item = new FeedReaderUrlConfiguration();
-			AddIn.RegisterEvent(item);
+			AddIn.RegisterEvents(item);
 
 			context.Item = item;
 			context.IsNew = true;
@@ -500,9 +503,10 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 
 		internal void OnPublishDateUpdated(object sender, EventArgs e)
 		{
-			// 毎回保存するとたぶん爆発する
-			//SaveConfig();
-
+#if false
+			// 毎回保存するとIO的にあんまりやさしくない気がする。
+			SaveConfig();
+#else
 			// 前回の保存から1時間経過していたら保存する
 			DateTime now = DateTime.Now;
 			TimeSpan span = now - _lastSaveTime;
@@ -511,15 +515,16 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 				SaveConfig();
 				_lastSaveTime = now;
 			}
+#endif
 		}
 
 		internal void OnFeedItemReceived(object sender, FeedReceiveEventArgs e)
 		{
 			var config = sender as FeedReaderUrlConfiguration;
 
-			String replacedSender = ReplaceFormatedString(config.SenderNick, config, e.Document, e.Item);
-			String replacedContent = ReplaceFormatedString(config.ContentFormat, config, e.Document, e.Item);
-			replacedContent = AppendTypableMap(replacedContent, FeedItemToStatus(e.Item));
+			String replacedSender = ReplaceFormattedString(config.SenderNick, config, e.Document, e.Item);
+			String replacedContent = ReplaceFormattedString(config.ContentFormat, config, e.Document, e.Item);
+			replacedContent = ApplyTypableMap(replacedContent, FeedItemToStatus(e.Item));
 
 			foreach (String line in replacedContent.Split('\n'))
 			{
@@ -531,22 +536,19 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 			}
 		}
 
-		internal void RegisterEvent(FeedReaderUrlConfiguration item)
+		internal void RegisterEvents(FeedReaderUrlConfiguration item)
 		{
 			item.ErrorHandled += new EventHandler<ErrorEventArgs>(OnErrorHandled);
 			item.PublishDateUpdated += new EventHandler(OnPublishDateUpdated);
 			item.FeedItemReceived += new EventHandler<FeedReceiveEventArgs>(OnFeedItemReceived);			
 		}
 
-		private String ReplaceFormatedString(String str, FeedReaderUrlConfiguration config, IFeedDocument doc, IFeedItem item)
+		private String ReplaceFormattedString(String str, FeedReaderUrlConfiguration config, IFeedDocument doc, IFeedItem item)
 		{
 			Func<String, String> conv = s =>
 			{
 				if (String.IsNullOrEmpty(s))
 					return String.Empty;
-
-				// HTML デコード
-				s = Utility.UnescapeCharReference(s);
 
 				if (config.EnableRemoveLineBreak)
 				{
@@ -565,18 +567,28 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 					s = _regexHtmlTag.Replace(s, String.Empty);
 				}
 
+				// HTML デコード
+				s = Utility.UnescapeCharReference(s);
+
 				return s;
 			};
 
+			// ${...} にすればよかった...
 			StringBuilder sb = new StringBuilder(str);
-			sb.Replace("#{feed_title}", conv(doc.Title));
-			sb.Replace("#{feed_link}", conv(doc.Link.ToString()));
-			sb.Replace("#{feed_description}", conv(doc.Description));
-			sb.Replace("#{author}", conv(item.Author));
-			sb.Replace("#{link}", conv(item.Link.ToString()));
-			sb.Replace("#{title}", conv(item.Title));
-			sb.Replace("#{description}", conv(item.Description));
-			sb.Replace("#{publish_date}", conv(item.PublishDate.ToString()));
+			if (doc != null)
+			{
+				sb.Replace("#{feed_title}", conv(doc.Title));
+				sb.Replace("#{feed_link}", conv(doc.Link.ToString()));
+				sb.Replace("#{feed_description}", conv(doc.Description));
+			}
+			if (item != null)
+			{
+				sb.Replace("#{author}", conv(item.Author));
+				sb.Replace("#{link}", conv(item.Link.ToString()));
+				sb.Replace("#{title}", conv(item.Title));
+				sb.Replace("#{description}", conv(item.Description));
+				sb.Replace("#{publish_date}", conv(item.PublishDate.ToString()));
+			}
 
 			return sb.ToString();
 		}
@@ -602,7 +614,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 		/// <summary>
 		/// TypableMapの情報を付与
 		/// </summary>
-		private String AppendTypableMap(String str, Status status)
+		private String ApplyTypableMap(String str, Status status)
 		{
 			if (Config.EnableTypableMap)
 			{
@@ -615,7 +627,7 @@ namespace Spica.Applications.TwitterIrcGateway.AddIns.FeedReader
 					if (CurrentSession.Config.TypableMapKeyColorNumber < 0)
 						return str + String.Format(" ({0})", typableMapId);
 					else
-						return str + String.Format(" \x0003{0}({1})", CurrentSession.Config.TypableMapKeyColorNumber, typableMapId);
+						return str + String.Format(" \x03{0}({1})\x03", CurrentSession.Config.TypableMapKeyColorNumber, typableMapId);
 				}
 			}
 
